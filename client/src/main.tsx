@@ -48,7 +48,7 @@ const AuthStatusComponent = () => {
           className="w-full" 
           onClick={() => loginMutation.mutate({ 
             username: "admin", 
-            password: "password123" 
+            password: "password" 
           })}
           disabled={loginMutation.isPending}
         >
