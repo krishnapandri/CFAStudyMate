@@ -9,9 +9,11 @@ import {
   activityLog, type ActivityLog, type InsertActivityLog
 } from "@shared/schema";
 import session from "express-session";
-import createMemoryStore from "memorystore";
+import { db, pool } from "./db";
+import { eq, and, desc, sql } from "drizzle-orm";
+import connectPg from "connect-pg-simple";
 
-const MemoryStore = createMemoryStore(session);
+const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
   // User methods
@@ -84,321 +86,303 @@ export interface IStorage {
   sessionStore: session.SessionStore;
 }
 
-export class MemStorage implements IStorage {
-  private usersMap: Map<number, User>;
-  private chaptersMap: Map<number, Chapter>;
-  private topicsMap: Map<number, Topic>;
-  private questionsMap: Map<number, Question>;
-  private quizAttemptsMap: Map<number, QuizAttempt>;
-  private userProgressMap: Map<number, UserProgress>;
-  private studySessionsMap: Map<number, StudySession>;
-  private activityLogMap: Map<number, ActivityLog>;
-  
-  private userIdCounter: number;
-  private chapterIdCounter: number;
-  private topicIdCounter: number;
-  private questionIdCounter: number;
-  private quizAttemptIdCounter: number;
-  private userProgressIdCounter: number;
-  private studySessionIdCounter: number;
-  private activityLogIdCounter: number;
-  
+export class DatabaseStorage implements IStorage {
   sessionStore: session.SessionStore;
 
   constructor() {
-    this.usersMap = new Map();
-    this.chaptersMap = new Map();
-    this.topicsMap = new Map();
-    this.questionsMap = new Map();
-    this.quizAttemptsMap = new Map();
-    this.userProgressMap = new Map();
-    this.studySessionsMap = new Map();
-    this.activityLogMap = new Map();
-    
-    this.userIdCounter = 1;
-    this.chapterIdCounter = 1;
-    this.topicIdCounter = 1;
-    this.questionIdCounter = 1;
-    this.quizAttemptIdCounter = 1;
-    this.userProgressIdCounter = 1;
-    this.studySessionIdCounter = 1;
-    this.activityLogIdCounter = 1;
-    
-    this.sessionStore = new MemoryStore({
-      checkPeriod: 86400000, // prune expired entries every 24h
-    });
-
-    // Initialize with admin user
-    this.createUser({
-      username: "admin",
-      password: "password", // This will be hashed in auth.ts
-      name: "Admin User",
-      role: "admin",
+    this.sessionStore = new PostgresSessionStore({
+      pool,
+      createTableIfMissing: true
     });
   }
 
   // User methods
   async getUser(id: number): Promise<User | undefined> {
-    return this.usersMap.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.usersMap.values()).find(
-      (user) => user.username === username
-    );
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.userIdCounter++;
-    const user: User = { 
-      ...insertUser, 
-      id, 
-      lastLogin: null
-    };
-    this.usersMap.set(id, user);
+    const [user] = await db.insert(users).values(insertUser).returning();
     return user;
   }
 
   async getAllUsers(): Promise<User[]> {
-    return Array.from(this.usersMap.values());
+    return await db.select().from(users);
   }
 
   async updateUserLastLogin(id: number): Promise<void> {
-    const user = await this.getUser(id);
-    if (user) {
-      user.lastLogin = new Date();
-      this.usersMap.set(id, user);
-    }
+    await db.update(users)
+      .set({ lastLogin: new Date() })
+      .where(eq(users.id, id));
   }
 
   // Chapter methods
   async createChapter(chapter: InsertChapter): Promise<Chapter> {
-    const id = this.chapterIdCounter++;
-    const newChapter: Chapter = { ...chapter, id };
-    this.chaptersMap.set(id, newChapter);
+    const [newChapter] = await db.insert(chapters).values(chapter).returning();
     return newChapter;
   }
 
   async getChapter(id: number): Promise<Chapter | undefined> {
-    return this.chaptersMap.get(id);
+    const [chapter] = await db.select().from(chapters).where(eq(chapters.id, id));
+    return chapter;
   }
 
   async getAllChapters(): Promise<Chapter[]> {
-    return Array.from(this.chaptersMap.values())
-      .sort((a, b) => a.order - b.order);
+    return await db.select().from(chapters).orderBy(chapters.order);
   }
 
   async updateChapter(id: number, chapter: Partial<InsertChapter>): Promise<Chapter> {
-    const existingChapter = await this.getChapter(id);
-    if (!existingChapter) {
+    const [updatedChapter] = await db
+      .update(chapters)
+      .set(chapter)
+      .where(eq(chapters.id, id))
+      .returning();
+    
+    if (!updatedChapter) {
       throw new Error(`Chapter with id ${id} not found`);
     }
     
-    const updatedChapter: Chapter = {
-      ...existingChapter,
-      ...chapter,
-    };
-    
-    this.chaptersMap.set(id, updatedChapter);
     return updatedChapter;
   }
 
   async deleteChapter(id: number): Promise<void> {
-    this.chaptersMap.delete(id);
+    // Get topics in this chapter
+    const topicsToDelete = await this.getTopicsByChapter(id);
     
-    // Delete associated topics
-    const topicsToDelete = Array.from(this.topicsMap.values())
-      .filter(topic => topic.chapterId === id);
-    
+    // Delete topics one by one (to trigger cascading deletes properly)
     for (const topic of topicsToDelete) {
       await this.deleteTopic(topic.id);
     }
+    
+    // Delete the chapter
+    await db.delete(chapters).where(eq(chapters.id, id));
   }
 
   // Topic methods
   async createTopic(topic: InsertTopic): Promise<Topic> {
-    const id = this.topicIdCounter++;
-    const newTopic: Topic = { ...topic, id };
-    this.topicsMap.set(id, newTopic);
+    const [newTopic] = await db.insert(topics).values(topic).returning();
     return newTopic;
   }
 
   async getTopic(id: number): Promise<Topic | undefined> {
-    return this.topicsMap.get(id);
+    const [topic] = await db.select().from(topics).where(eq(topics.id, id));
+    return topic;
   }
 
   async getAllTopics(): Promise<Topic[]> {
-    return Array.from(this.topicsMap.values())
-      .sort((a, b) => a.order - b.order);
+    return await db.select().from(topics).orderBy(topics.order);
   }
 
   async getTopicsByChapter(chapterId: number): Promise<Topic[]> {
-    return Array.from(this.topicsMap.values())
-      .filter(topic => topic.chapterId === chapterId)
-      .sort((a, b) => a.order - b.order);
+    return await db
+      .select()
+      .from(topics)
+      .where(eq(topics.chapterId, chapterId))
+      .orderBy(topics.order);
   }
 
   async updateTopic(id: number, topic: Partial<InsertTopic>): Promise<Topic> {
-    const existingTopic = await this.getTopic(id);
-    if (!existingTopic) {
+    const [updatedTopic] = await db
+      .update(topics)
+      .set(topic)
+      .where(eq(topics.id, id))
+      .returning();
+    
+    if (!updatedTopic) {
       throw new Error(`Topic with id ${id} not found`);
     }
     
-    const updatedTopic: Topic = {
-      ...existingTopic,
-      ...topic,
-    };
-    
-    this.topicsMap.set(id, updatedTopic);
     return updatedTopic;
   }
 
   async deleteTopic(id: number): Promise<void> {
-    this.topicsMap.delete(id);
+    // Get questions in this topic
+    const questionsToDelete = await this.getQuestionsByTopic(id);
     
-    // Delete associated questions
-    const questionsToDelete = Array.from(this.questionsMap.values())
-      .filter(question => question.topicId === id);
-    
+    // Delete questions one by one
     for (const question of questionsToDelete) {
       await this.deleteQuestion(question.id);
     }
+    
+    // Delete the topic
+    await db.delete(topics).where(eq(topics.id, id));
   }
 
   // Question methods
   async createQuestion(question: InsertQuestion): Promise<Question> {
-    const id = this.questionIdCounter++;
-    const newQuestion: Question = { ...question, id };
-    this.questionsMap.set(id, newQuestion);
+    const [newQuestion] = await db.insert(questions).values(question).returning();
     return newQuestion;
   }
 
   async getQuestion(id: number): Promise<Question | undefined> {
-    return this.questionsMap.get(id);
+    const [question] = await db.select().from(questions).where(eq(questions.id, id));
+    return question;
   }
 
   async getAllQuestions(): Promise<Question[]> {
-    return Array.from(this.questionsMap.values());
+    return await db.select().from(questions);
   }
 
   async getQuestionsByTopic(topicId: number): Promise<Question[]> {
-    return Array.from(this.questionsMap.values())
-      .filter(question => question.topicId === topicId);
+    return await db
+      .select()
+      .from(questions)
+      .where(eq(questions.topicId, topicId));
   }
 
   async updateQuestion(id: number, question: Partial<InsertQuestion>): Promise<Question> {
-    const existingQuestion = await this.getQuestion(id);
-    if (!existingQuestion) {
+    const [updatedQuestion] = await db
+      .update(questions)
+      .set(question)
+      .where(eq(questions.id, id))
+      .returning();
+    
+    if (!updatedQuestion) {
       throw new Error(`Question with id ${id} not found`);
     }
     
-    const updatedQuestion: Question = {
-      ...existingQuestion,
-      ...question,
-    };
-    
-    this.questionsMap.set(id, updatedQuestion);
     return updatedQuestion;
   }
 
   async deleteQuestion(id: number): Promise<void> {
-    this.questionsMap.delete(id);
+    await db.delete(questions).where(eq(questions.id, id));
   }
 
   // Quiz attempt methods
   async createQuizAttempt(attempt: InsertQuizAttempt): Promise<QuizAttempt> {
-    const id = this.quizAttemptIdCounter++;
-    const newAttempt: QuizAttempt = { ...attempt, id };
-    this.quizAttemptsMap.set(id, newAttempt);
+    const [newAttempt] = await db.insert(quizAttempts).values(attempt).returning();
     return newAttempt;
   }
 
   async getQuizAttempt(id: number): Promise<QuizAttempt | undefined> {
-    return this.quizAttemptsMap.get(id);
+    const [attempt] = await db.select().from(quizAttempts).where(eq(quizAttempts.id, id));
+    return attempt;
   }
 
   async getQuizAttemptsByUser(userId: number): Promise<QuizAttempt[]> {
-    return Array.from(this.quizAttemptsMap.values())
-      .filter(attempt => attempt.userId === userId)
-      .sort((a, b) => b.completedAt.getTime() - a.completedAt.getTime());
+    return await db
+      .select()
+      .from(quizAttempts)
+      .where(eq(quizAttempts.userId, userId))
+      .orderBy(desc(quizAttempts.completedAt));
   }
 
   async getQuizAttemptsByTopic(topicId: number): Promise<QuizAttempt[]> {
-    return Array.from(this.quizAttemptsMap.values())
-      .filter(attempt => attempt.topicId === topicId);
+    return await db
+      .select()
+      .from(quizAttempts)
+      .where(eq(quizAttempts.topicId, topicId));
   }
 
   // User progress methods
   async createOrUpdateUserProgress(progress: InsertUserProgress): Promise<UserProgress> {
-    // Check if progress for this user-topic combination already exists
-    const existingProgress = Array.from(this.userProgressMap.values()).find(
-      p => p.userId === progress.userId && p.topicId === progress.topicId
-    );
+    // Check if progress exists
+    const [existingProgress] = await db
+      .select()
+      .from(userProgress)
+      .where(
+        and(
+          eq(userProgress.userId, progress.userId),
+          eq(userProgress.topicId, progress.topicId)
+        )
+      );
     
     if (existingProgress) {
-      const updatedProgress: UserProgress = {
-        ...existingProgress,
-        progress: progress.progress,
-        completed: progress.completed,
-        lastActivity: progress.lastActivity,
-      };
+      // Update existing progress
+      const [updatedProgress] = await db
+        .update(userProgress)
+        .set({
+          progress: progress.progress,
+          completed: progress.completed,
+          lastActivity: progress.lastActivity
+        })
+        .where(eq(userProgress.id, existingProgress.id))
+        .returning();
       
-      this.userProgressMap.set(existingProgress.id, updatedProgress);
       return updatedProgress;
     } else {
-      const id = this.userProgressIdCounter++;
-      const newProgress: UserProgress = { ...progress, id };
-      this.userProgressMap.set(id, newProgress);
+      // Create new progress
+      const [newProgress] = await db.insert(userProgress).values(progress).returning();
       return newProgress;
     }
   }
 
   async getUserProgressByUser(userId: number): Promise<UserProgress[]> {
-    return Array.from(this.userProgressMap.values())
-      .filter(progress => progress.userId === userId);
+    return await db
+      .select()
+      .from(userProgress)
+      .where(eq(userProgress.userId, userId));
   }
 
   async getUserProgressByChapter(userId: number, chapterId: number): Promise<UserProgress[]> {
-    return Array.from(this.userProgressMap.values())
-      .filter(progress => progress.userId === userId && progress.chapterId === chapterId);
+    // First get topics for the chapter
+    const chapterTopics = await this.getTopicsByChapter(chapterId);
+    
+    if (chapterTopics.length === 0) {
+      return [];
+    }
+    
+    // Then get progress for those topics
+    const topicIds = chapterTopics.map(topic => topic.id);
+    
+    return await db
+      .select()
+      .from(userProgress)
+      .where(
+        and(
+          eq(userProgress.userId, userId),
+          sql`${userProgress.topicId} IN (${sql.join(topicIds, sql`, `)})`
+        )
+      );
   }
 
   // Study session methods
   async createStudySession(session: InsertStudySession): Promise<StudySession> {
-    const id = this.studySessionIdCounter++;
-    const newSession: StudySession = { ...session, id };
-    this.studySessionsMap.set(id, newSession);
+    const [newSession] = await db.insert(studySessions).values(session).returning();
     return newSession;
   }
 
   async getStudySessionsByUser(userId: number): Promise<StudySession[]> {
-    return Array.from(this.studySessionsMap.values())
-      .filter(session => session.userId === userId)
-      .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+    return await db
+      .select()
+      .from(studySessions)
+      .where(eq(studySessions.userId, userId))
+      .orderBy(desc(studySessions.startedAt));
   }
 
   async getTotalStudyTime(userId: number): Promise<number> {
-    const sessions = await this.getStudySessionsByUser(userId);
-    return sessions.reduce((total, session) => total + session.duration, 0);
+    const result = await db
+      .select({ total: sql`SUM(${studySessions.duration})` })
+      .from(studySessions)
+      .where(eq(studySessions.userId, userId));
+    
+    return result[0]?.total || 0;
   }
 
   // Activity log methods
   async createActivityLog(log: InsertActivityLog): Promise<ActivityLog> {
-    const id = this.activityLogIdCounter++;
-    const newLog: ActivityLog = { 
-      ...log, 
-      id, 
-      createdAt: log.createdAt || new Date() 
+    const newLog = {
+      ...log,
+      createdAt: log.createdAt || new Date()
     };
-    this.activityLogMap.set(id, newLog);
-    return newLog;
+    
+    const [createdLog] = await db.insert(activityLog).values(newLog).returning();
+    return createdLog;
   }
 
   async getRecentActivitiesByUser(userId: number, limit: number = 10): Promise<ActivityLog[]> {
-    return Array.from(this.activityLogMap.values())
-      .filter(log => log.userId === userId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      .slice(0, limit);
+    return await db
+      .select()
+      .from(activityLog)
+      .where(eq(activityLog.userId, userId))
+      .orderBy(desc(activityLog.createdAt))
+      .limit(limit);
   }
 
   // Stats methods
@@ -425,14 +409,15 @@ export class MemStorage implements IStorage {
     const studyTime = await this.getTotalStudyTime(userId);
     
     // Get all chapters
-    const chapters = await this.getAllChapters();
+    const allChapters = await this.getAllChapters();
     
     // Get user progress
     const progress = await this.getUserProgressByUser(userId);
     
     // Calculate chapter progress
     const chapterProgress = [];
-    for (const chapter of chapters) {
+    
+    for (const chapter of allChapters) {
       const topics = await this.getTopicsByChapter(chapter.id);
       if (topics.length === 0) continue;
       
@@ -478,16 +463,34 @@ export class MemStorage implements IStorage {
     topics: number;
     questions: number;
   }> {
-    const students = Array.from(this.usersMap.values())
-      .filter(user => user.role === 'student').length;
+    // Count students
+    const [studentsResult] = await db
+      .select({ count: sql`COUNT(*)` })
+      .from(users)
+      .where(eq(users.role, 'student'));
+    
+    // Count chapters
+    const [chaptersResult] = await db
+      .select({ count: sql`COUNT(*)` })
+      .from(chapters);
+    
+    // Count topics
+    const [topicsResult] = await db
+      .select({ count: sql`COUNT(*)` })
+      .from(topics);
+    
+    // Count questions
+    const [questionsResult] = await db
+      .select({ count: sql`COUNT(*)` })
+      .from(questions);
       
     return {
-      totalStudents: students,
-      chapters: this.chaptersMap.size,
-      topics: this.topicsMap.size,
-      questions: this.questionsMap.size
+      totalStudents: Number(studentsResult?.count || 0),
+      chapters: Number(chaptersResult?.count || 0),
+      topics: Number(topicsResult?.count || 0),
+      questions: Number(questionsResult?.count || 0)
     };
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
