@@ -4,10 +4,10 @@ import {
   useMutation,
   UseMutationResult,
 } from "@tanstack/react-query";
-import { insertUserSchema, User } from "@shared/schema";
+import { User } from "@shared/schema";
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { z } from "zod";
+import { LoginData, RegisterData } from "@/lib/schemas";
 
 type AuthContextType = {
   user: User | null;
@@ -17,26 +17,6 @@ type AuthContextType = {
   logoutMutation: UseMutationResult<void, Error, void>;
   registerMutation: UseMutationResult<User, Error, RegisterData>;
 };
-
-type LoginData = {
-  username: string;
-  password: string;
-};
-
-// Extend the schema for registration form validation
-const registerSchema = insertUserSchema.pick({ 
-  username: true, 
-  password: true, 
-  name: true 
-}).extend({
-  confirmPassword: z.string(),
-  role: z.enum(["student", "admin"]).default("student")
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords do not match",
-  path: ["confirmPassword"],
-});
-
-type RegisterData = z.infer<typeof registerSchema>;
 
 export const AuthContext = createContext<AuthContextType | null>(null);
 
@@ -137,5 +117,3 @@ export function useAuth() {
   }
   return context;
 }
-
-export { registerSchema };

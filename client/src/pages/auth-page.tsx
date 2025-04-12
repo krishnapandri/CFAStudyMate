@@ -1,4 +1,4 @@
-import { useAuth, registerSchema } from "@/hooks/use-auth";
+import { useAuth } from "@/hooks/use-auth";
 import { Redirect } from "wouter";
 import LoginForm from "@/components/auth/login-form";
 import RegisterForm from "@/components/auth/register-form";

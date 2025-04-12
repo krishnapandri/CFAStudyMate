@@ -1,22 +1,13 @@
 import { useAuth } from "@/hooks/use-auth";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { loginSchema, type LoginData } from "@/lib/schemas";
 
-const loginSchema = z.object({
-  username: z.string().min(3, {
-    message: "Username must be at least 3 characters",
-  }),
-  password: z.string().min(6, {
-    message: "Password must be at least 6 characters",
-  }),
-});
-
-type LoginValues = z.infer<typeof loginSchema>;
+type LoginValues = LoginData;
 
 export default function LoginForm() {
   const { loginMutation } = useAuth();

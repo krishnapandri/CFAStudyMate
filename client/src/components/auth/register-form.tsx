@@ -1,4 +1,5 @@
-import { useAuth, registerSchema } from "@/hooks/use-auth";
+import { useAuth } from "@/hooks/use-auth";
+import { registerSchema } from "@/lib/schemas";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";

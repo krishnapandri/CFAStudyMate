@@ -1,5 +1,4 @@
 import { Switch, Route } from "wouter";
-import { Toaster } from "@/components/ui/toaster";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth-page";
 import { ProtectedRoute } from "@/lib/protected-route";
@@ -18,33 +17,32 @@ function App() {
   const { user } = useAuth();
   
   return (
-    <>
-      <Switch>
-        {/* Auth route */}
-        <Route path="/auth" component={AuthPage} />
-        
-        {/* Protected routes */}
-        <ProtectedRoute 
-          path="/" 
-          component={user?.role === "admin" ? AdminDashboard : StudentDashboard} 
-        />
-        
-        {/* Student routes */}
-        <ProtectedRoute path="/chapters" component={ChaptersPage} />
-        <ProtectedRoute path="/quiz/:topicId" component={QuizPage} />
-        <ProtectedRoute path="/performance" component={PerformancePage} />
-        
-        {/* Admin routes */}
-        <ProtectedRoute path="/admin/chapters" component={ManageChapters} />
-        <ProtectedRoute path="/admin/topics" component={ManageTopics} />
-        <ProtectedRoute path="/admin/questions" component={ManageQuestions} />
-        <ProtectedRoute path="/admin/users" component={ManageUsers} />
-        
-        {/* Fallback to 404 */}
-        <Route component={NotFound} />
-      </Switch>
-      <Toaster />
-    </>
+    <Switch>
+      {/* Auth route */}
+      <Route path="/auth" component={AuthPage} />
+      
+      {/* Protected routes */}
+      <ProtectedRoute 
+        path="/" 
+        component={({ user }) => 
+          user.role === "admin" ? <AdminDashboard /> : <StudentDashboard />
+        } 
+      />
+      
+      {/* Student routes */}
+      <ProtectedRoute path="/chapters" component={({ user }) => <ChaptersPage />} />
+      <ProtectedRoute path="/quiz/:topicId" component={({ user }) => <QuizPage />} />
+      <ProtectedRoute path="/performance" component={({ user }) => <PerformancePage />} />
+      
+      {/* Admin routes */}
+      <ProtectedRoute path="/admin/chapters" component={({ user }) => <ManageChapters />} />
+      <ProtectedRoute path="/admin/topics" component={({ user }) => <ManageTopics />} />
+      <ProtectedRoute path="/admin/questions" component={({ user }) => <ManageQuestions />} />
+      <ProtectedRoute path="/admin/users" component={({ user }) => <ManageUsers />} />
+      
+      {/* Fallback to 404 */}
+      <Route component={NotFound} />
+    </Switch>
   );
 }
 

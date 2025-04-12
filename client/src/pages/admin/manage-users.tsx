@@ -42,7 +42,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { registerSchema } from "@/hooks/use-auth";
+import { registerSchema } from "@/lib/schemas";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { UserPlus, Users, Clock, Calendar } from "lucide-react";
