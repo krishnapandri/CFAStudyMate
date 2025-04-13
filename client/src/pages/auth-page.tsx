@@ -25,15 +25,13 @@ export default function AuthPage() {
     },
   });
   
-  // We'll use the original RegisterData type but without email
-  type ModifiedRegisterData = Omit<RegisterData, 'email'>;
-  
-  // Register form
-  const registerForm = useForm<ModifiedRegisterData>({
+  // Register form using the full RegisterData type
+  const registerForm = useForm<RegisterData>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
       username: "",
       name: "",
+      email: "",
       password: "",
       confirmPassword: "",
       role: "student",
@@ -48,7 +46,7 @@ export default function AuthPage() {
     });
   }
   
-  function handleRegisterSubmit(values: ModifiedRegisterData) {
+  function handleRegisterSubmit(values: RegisterData) {
     registerMutation.mutate(values, {
       onSuccess: () => {
         navigate("/");
@@ -119,6 +117,12 @@ export default function AuthPage() {
                           "Sign in"
                         )}
                       </Button>
+                      
+                      <div className="text-center mt-2">
+                        <Button variant="link" className="text-sm text-primary" onClick={() => setShowForgotPassword(true)}>
+                          Forgot your password?
+                        </Button>
+                      </div>
                     </form>
                   </Form>
                 </TabsContent>
@@ -153,7 +157,19 @@ export default function AuthPage() {
                         )}
                       />
                       
-                      {/* Email field removed as it's not in our schema */}
+                      <FormField
+                        control={registerForm.control}
+                        name="email"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Email</FormLabel>
+                            <FormControl>
+                              <Input type="email" placeholder="Enter your email address" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                       
                       <FormField
                         control={registerForm.control}
