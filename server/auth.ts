@@ -1,17 +1,25 @@
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
-import { Express } from "express";
+import { Express, Request, Response, NextFunction } from "express";
 import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
+import jwt from "jsonwebtoken";
 
 declare global {
   namespace Express {
     interface User extends SelectUser {}
+    interface Request {
+      user?: SelectUser;
+    }
   }
 }
+
+// JWT configuration
+const JWT_SECRET = process.env.JWT_SECRET || "cfa-level-i-jwt-secret";
+const JWT_EXPIRES_IN = "24h"; // Token expires in 24 hours
 
 const scryptAsync = promisify(scrypt);
 
@@ -44,7 +52,44 @@ async function comparePasswords(supplied: string, stored: string) {
   }
 }
 
+// Generate JWT token
+function generateToken(user: SelectUser) {
+  const payload = {
+    id: user.id,
+    username: user.username,
+    role: user.role
+  };
+  
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}
+
+// JWT authentication middleware
+const authenticateJWT = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Get the token from the Authorization header or from cookies
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    if (!token) {
+      return next(); // No token, but allow the request to continue to other auth methods
+    }
+    
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: number };
+    const user = await storage.getUser(decoded.id);
+    
+    if (user) {
+      req.user = user;
+    }
+    
+    next();
+  } catch (error) {
+    // JWT verification failed - but don't send an error, just continue to other auth methods
+    next();
+  }
+};
+
 export function setupAuth(app: Express) {
+  // Set up both session and JWT authentication
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || 'cfa-level-i-secret-key',
     resave: false,
@@ -60,6 +105,7 @@ export function setupAuth(app: Express) {
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
+  app.use(authenticateJWT); // Apply JWT middleware before Passport
 
   passport.use(
     new LocalStrategy(async (username, password, done) => {
@@ -101,7 +147,10 @@ export function setupAuth(app: Express) {
       }
 
       // Only allow admin creation by existing admin users
-      if (role === "admin" && (!req.isAuthenticated() || req.user?.role !== "admin")) {
+      const isAdminRequest = role === "admin";
+      const isAdminUser = req.user?.role === "admin";
+      
+      if (isAdminRequest && !isAdminUser) {
         return res.status(403).json({ message: "Unauthorized to create admin users" });
       }
 
@@ -117,9 +166,13 @@ export function setupAuth(app: Express) {
       // For security reasons, don't send back the password
       const userWithoutPassword = { ...user, password: undefined };
 
+      // Generate a JWT token
+      const token = generateToken(user);
+      
+      // Use both JWT and session for compatibility
       req.login(user, (err) => {
         if (err) return next(err);
-        res.status(201).json(userWithoutPassword);
+        res.status(201).json({ user: userWithoutPassword, token });
       });
     } catch (error) {
       next(error);
@@ -131,12 +184,16 @@ export function setupAuth(app: Express) {
       if (err) return next(err);
       if (!user) return res.status(401).json({ message: "Invalid username or password" });
       
+      // Generate a JWT token
+      const token = generateToken(user);
+      
+      // Use both JWT and session for compatibility
       req.login(user, (err) => {
         if (err) return next(err);
         
         // For security reasons, don't send back the password
         const userWithoutPassword = { ...user, password: undefined };
-        res.status(200).json(userWithoutPassword);
+        res.status(200).json({ user: userWithoutPassword, token });
       });
     })(req, res, next);
   });
@@ -149,24 +206,26 @@ export function setupAuth(app: Express) {
   });
 
   app.get("/api/user", (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
+    if (!req.user) return res.sendStatus(401);
     
     // For security reasons, don't send back the password
     const userWithoutPassword = { ...req.user, password: undefined };
     res.json(userWithoutPassword);
   });
 
-  // Middleware to check if user is authenticated
-  const isAuthenticated = (req: { isAuthenticated: () => any; }, res: { status: (arg0: number) => { (): any; new(): any; json: { (arg0: { message: string; }): void; new(): any; }; }; }, next: () => any) => {
-    if (req.isAuthenticated()) {
+  // Middleware to check if user is authenticated (supports both JWT and session)
+  const isAuthenticated = (req: Request, res: Response, next: NextFunction) => {
+    // User will be set by either JWT middleware or passport session
+    if (req.user) {
       return next();
     }
     res.status(401).json({ message: "Not authenticated" });
   };
 
   // Middleware to check if user is admin
-  const isAdmin = (req: { isAuthenticated: () => any; user: { role: string; }; }, res: { status: (arg0: number) => { (): any; new(): any; json: { (arg0: { message: string; }): void; new(): any; }; }; }, next: () => any) => {
-    if (req.isAuthenticated() && req.user.role === 'admin') {
+  const isAdmin = (req: Request, res: Response, next: NextFunction) => {
+    // User will be set by either JWT middleware or passport session
+    if (req.user && req.user.role === 'admin') {
       return next();
     }
     res.status(403).json({ message: "Not authorized" });
