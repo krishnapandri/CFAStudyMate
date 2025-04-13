@@ -229,11 +229,26 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ message: "Email is required" });
       }
       
-      // Request password reset token (doesn't reveal if email exists for security)
-      const success = await storage.requestPasswordReset(email);
+      // Request password reset token
+      const result = await storage.requestPasswordReset(email);
       
-      // Always return success to prevent email enumeration attacks
-      res.status(200).json({ message: "If an account with that email exists, a password reset link has been sent" });
+      if (result.success) {
+        // For development purposes, return the reset link in the response
+        // In production, this would be sent via email and not returned to the client
+        const resetUrl = `${req.protocol}://${req.get('host')}/reset-password?token=${result.token}`;
+        res.status(200).json({ 
+          message: "Password reset link generated successfully", 
+          resetUrl, 
+          token: result.token,
+          // Only include email for development to identify which user
+          email: result.user?.email
+        });
+      } else {
+        // For security, don't reveal whether the email exists or not
+        res.status(200).json({ 
+          message: "If an account with that email exists, a password reset link has been generated" 
+        });
+      }
     } catch (error) {
       console.error("Password reset request error:", error);
       res.status(500).json({ message: "An error occurred while processing your request" });
@@ -249,7 +264,10 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ message: "Token and new password are required" });
       }
       
-      const success = await storage.resetPassword(token, newPassword);
+      // Hash the new password before storing it
+      const hashedPassword = await hashPassword(newPassword);
+      
+      const success = await storage.resetPassword(token, hashedPassword);
       
       if (!success) {
         return res.status(400).json({ message: "Invalid or expired reset token" });

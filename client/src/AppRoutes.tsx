@@ -51,8 +51,9 @@ export default function AppRoutes() {
   
   return (
     <Switch>
-      {/* Auth route */}
+      {/* Public routes */}
       <Route path="/auth" component={AuthPage} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
       
       {/* Dashboard route */}
       <Route path="/">

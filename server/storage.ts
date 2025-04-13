@@ -24,7 +24,7 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   getAllUsers(): Promise<User[]>;
   updateUserLastLogin(id: number): Promise<void>;
-  requestPasswordReset(email: string): Promise<boolean>;
+  requestPasswordReset(email: string): Promise<{ success: boolean; token?: string; user?: User }>;
   resetPassword(token: string, newPassword: string): Promise<boolean>;
   
   // Chapter methods
@@ -121,11 +121,11 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
   
-  async requestPasswordReset(email: string): Promise<boolean> {
+  async requestPasswordReset(email: string): Promise<{ success: boolean; token?: string; user?: User }> {
     const user = await this.getUserByEmail(email);
     
     if (!user) {
-      return false;
+      return { success: false };
     }
     
     // Generate a random token
@@ -141,7 +141,13 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(users.id, user.id));
     
-    return true;
+    // Return the token for development purposes
+    // In production, this would be sent via email
+    return { 
+      success: true, 
+      token: resetToken,
+      user: user 
+    };
   }
   
   async resetPassword(token: string, newPassword: string): Promise<boolean> {

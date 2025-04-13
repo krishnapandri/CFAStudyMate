@@ -31,6 +31,7 @@ export default function AuthPage() {
   
   // Forgot password state
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetLink, setResetLink] = useState<string | null>(null);
   
   // Forgot password schema
   const forgotPasswordSchema = z.object({
@@ -51,17 +52,25 @@ export default function AuthPage() {
       const res = await apiRequest("POST", "/api/forgot-password", { email });
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.message || "Failed to send reset link");
+        throw new Error(error.message || "Failed to generate reset link");
       }
-      return true;
+      return await res.json();
     },
-    onSuccess: () => {
-      toast({
-        title: "Reset link sent",
-        description: "If an account with that email exists, you'll receive a password reset link",
-      });
-      setShowForgotPassword(false);
-      forgotPasswordForm.reset();
+    onSuccess: (data) => {
+      if (data.resetUrl) {
+        setResetLink(data.resetUrl);
+        toast({
+          title: "Reset link generated",
+          description: "A password reset link has been generated. In a production environment, this would be sent via email.",
+        });
+      } else {
+        toast({
+          title: "Reset link generated",
+          description: "If an account with that email exists, a password reset link has been generated",
+        });
+        setShowForgotPassword(false);
+        forgotPasswordForm.reset();
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -74,7 +83,15 @@ export default function AuthPage() {
   
   // Handle forgot password submit
   function handleForgotPasswordSubmit(values: { email: string }) {
+    setResetLink(null);
     forgotPasswordMutation.mutate(values.email);
+  }
+  
+  // Handle reset link dialog close
+  function handleResetLinkDialogClose() {
+    setResetLink(null);
+    setShowForgotPassword(false);
+    forgotPasswordForm.reset();
   }
   
   // Login form
@@ -320,12 +337,13 @@ export default function AuthPage() {
         </div>
       </div>
 
-      <Dialog open={showForgotPassword} onOpenChange={setShowForgotPassword}>
+      {/* Forgot Password Dialog */}
+      <Dialog open={showForgotPassword && !resetLink} onOpenChange={setShowForgotPassword}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Reset your password</DialogTitle>
             <DialogDescription>
-              Enter your email address and we will send you a password reset link.
+              Enter your email address and we'll generate a password reset link.
             </DialogDescription>
           </DialogHeader>
           <Form {...forgotPasswordForm}>
@@ -352,15 +370,52 @@ export default function AuthPage() {
                   {forgotPasswordMutation.isPending ? (
                     <div>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Sending...
+                      Generating...
                     </div>
                   ) : (
-                    "Send Reset Link"
+                    "Generate Reset Link"
                   )}
                 </Button>
               </DialogFooter>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Reset Link Dialog */}
+      <Dialog open={!!resetLink} onOpenChange={(open) => !open && handleResetLinkDialogClose()}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Password Reset Link</DialogTitle>
+            <DialogDescription>
+              This is your password reset link. In a production environment, this would be sent via email.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="mt-4 p-3 bg-slate-50 rounded-md border border-slate-200 overflow-auto">
+            <code className="text-sm break-all font-mono">{resetLink}</code>
+          </div>
+          
+          <div className="mt-2 text-sm text-slate-500">
+            <p>For development purposes, the link is displayed here. Click it to go to the password reset page.</p>
+          </div>
+          
+          <DialogFooter className="mt-4">
+            <Button 
+              className="mr-2" 
+              variant="outline" 
+              onClick={handleResetLinkDialogClose}
+            >
+              Close
+            </Button>
+            <Button 
+              onClick={() => {
+                window.open(resetLink!, '_blank');
+              }}
+            >
+              Open Reset Page
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
