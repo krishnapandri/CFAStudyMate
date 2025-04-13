@@ -1,6 +1,7 @@
 import { Switch, Route } from "wouter";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth-page";
+import ResetPasswordPage from "@/pages/reset-password-page";
 import StudentDashboard from "@/pages/student-dashboard";
 import AdminDashboard from "@/pages/admin-dashboard";
 import ChaptersPage from "@/pages/chapters-page";
@@ -27,8 +28,11 @@ export default function AppRoutes() {
     );
   }
 
-  // If user is not logged in and not on auth page, redirect to auth
-  if (!user && location !== "/auth") {
+  // Don't redirect on reset-password page
+  const isPublicRoute = location === "/auth" || location.startsWith("/reset-password");
+  
+  // If user is not logged in and not on a public page, redirect to auth
+  if (!user && !isPublicRoute) {
     navigate("/auth");
     return null;
   }

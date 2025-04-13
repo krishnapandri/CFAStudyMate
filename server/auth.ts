@@ -219,6 +219,48 @@ export function setupAuth(app: Express) {
     const userWithoutPassword = { ...req.user, password: undefined };
     res.json(userWithoutPassword);
   });
+  
+  // Forgot password endpoint
+  app.post("/api/forgot-password", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      
+      // Request password reset token (doesn't reveal if email exists for security)
+      const success = await storage.requestPasswordReset(email);
+      
+      // Always return success to prevent email enumeration attacks
+      res.status(200).json({ message: "If an account with that email exists, a password reset link has been sent" });
+    } catch (error) {
+      console.error("Password reset request error:", error);
+      res.status(500).json({ message: "An error occurred while processing your request" });
+    }
+  });
+  
+  // Reset password endpoint
+  app.post("/api/reset-password", async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+      
+      if (!token || !newPassword) {
+        return res.status(400).json({ message: "Token and new password are required" });
+      }
+      
+      const success = await storage.resetPassword(token, newPassword);
+      
+      if (!success) {
+        return res.status(400).json({ message: "Invalid or expired reset token" });
+      }
+      
+      res.status(200).json({ message: "Password has been reset successfully" });
+    } catch (error) {
+      console.error("Password reset error:", error);
+      res.status(500).json({ message: "An error occurred while resetting your password" });
+    }
+  });
 
   // Middleware to check if user is authenticated (supports both JWT and session)
   const isAuthenticated = (req: Request, res: Response, next: NextFunction) => {
