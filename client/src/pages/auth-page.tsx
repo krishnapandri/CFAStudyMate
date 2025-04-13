@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,22 +6,18 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { z } from "zod";
 import { loginSchema, registerSchema } from "@/lib/schemas";
-import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { useLocation } from "wouter";
+import { LoginData, RegisterData } from "@/lib/schemas";
 
-interface AuthPageProps {
-  onLogin: (username: string, password: string) => Promise<boolean>;
-  onRegister: (userData: any) => Promise<boolean>;
-  error: Error | null;
-}
-
-export default function AuthPage({ onLogin, onRegister, error }: AuthPageProps) {
-  const { toast } = useToast();
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [isRegistering, setIsRegistering] = useState(false);
+export default function AuthPage() {
+  const { loginMutation, registerMutation } = useAuth();
+  const [, navigate] = useLocation();
   
   // Login form
-  const loginForm = useForm({
+  const loginForm = useForm<LoginData>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
       username: "",
@@ -30,62 +25,35 @@ export default function AuthPage({ onLogin, onRegister, error }: AuthPageProps) 
     },
   });
   
+  // We'll use the original RegisterData type but without email
+  type ModifiedRegisterData = Omit<RegisterData, 'email'>;
+  
   // Register form
-  const registerForm = useForm({
+  const registerForm = useForm<ModifiedRegisterData>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
       username: "",
       name: "",
-      email: "",
       password: "",
       confirmPassword: "",
       role: "student",
     },
   });
   
-  async function handleLoginSubmit(values: { username: string; password: string }) {
-    setIsLoggingIn(true);
-    try {
-      const success = await onLogin(values.username, values.password);
-      if (!success) {
-        toast({
-          title: "Login failed",
-          description: error?.message || "Failed to login. Please check your credentials.",
-          variant: "destructive",
-        });
+  function handleLoginSubmit(values: LoginData) {
+    loginMutation.mutate(values, {
+      onSuccess: () => {
+        navigate("/");
       }
-    } catch (err) {
-      toast({
-        title: "Login failed",
-        description: "An unexpected error occurred.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoggingIn(false);
-    }
+    });
   }
   
-  async function handleRegisterSubmit(values: any) {
-    setIsRegistering(true);
-    try {
-      const { confirmPassword, ...userData } = values;
-      const success = await onRegister(userData);
-      if (!success) {
-        toast({
-          title: "Registration failed",
-          description: error?.message || "Failed to register. Please try again.",
-          variant: "destructive",
-        });
+  function handleRegisterSubmit(values: ModifiedRegisterData) {
+    registerMutation.mutate(values, {
+      onSuccess: () => {
+        navigate("/");
       }
-    } catch (err) {
-      toast({
-        title: "Registration failed",
-        description: "An unexpected error occurred.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsRegistering(false);
-    }
+    });
   }
   
   return (
@@ -140,9 +108,9 @@ export default function AuthPage({ onLogin, onRegister, error }: AuthPageProps) 
                       <Button 
                         type="submit" 
                         className="w-full" 
-                        disabled={isLoggingIn}
+                        disabled={loginMutation.isPending}
                       >
-                        {isLoggingIn ? (
+                        {loginMutation.isPending ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             Signing in...
@@ -185,19 +153,7 @@ export default function AuthPage({ onLogin, onRegister, error }: AuthPageProps) 
                         )}
                       />
                       
-                      <FormField
-                        control={registerForm.control}
-                        name="email"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Email</FormLabel>
-                            <FormControl>
-                              <Input type="email" placeholder="Enter your email" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      {/* Email field removed as it's not in our schema */}
                       
                       <FormField
                         control={registerForm.control}
@@ -232,9 +188,9 @@ export default function AuthPage({ onLogin, onRegister, error }: AuthPageProps) 
                       <Button 
                         type="submit" 
                         className="w-full mt-2" 
-                        disabled={isRegistering}
+                        disabled={registerMutation.isPending}
                       >
-                        {isRegistering ? (
+                        {registerMutation.isPending ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             Creating account...
