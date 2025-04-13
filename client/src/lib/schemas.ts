@@ -14,6 +14,7 @@ export const loginSchema = z.object({
 // Extended schema for registration form validation
 export const registerSchema = insertUserSchema.pick({ 
   username: true, 
+  email: true,
   password: true, 
   name: true 
 }).extend({

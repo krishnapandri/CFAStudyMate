@@ -135,15 +135,21 @@ export function setupAuth(app: Express) {
 
   app.post("/api/register", async (req, res, next) => {
     try {
-      const { username, password, name, role = "student" } = req.body;
+      const { username, email, password, name, role = "student" } = req.body;
       
-      if (!username || !password || !name) {
-        return res.status(400).json({ message: "Username, password, and name are required" });
+      if (!username || !email || !password || !name) {
+        return res.status(400).json({ message: "Username, email, password, and name are required" });
       }
       
       const existingUser = await storage.getUserByUsername(username);
       if (existingUser) {
         return res.status(400).json({ message: "Username already exists" });
+      }
+      
+      // Check for existing email
+      const existingEmail = await storage.getUserByEmail(email);
+      if (existingEmail) {
+        return res.status(400).json({ message: "Email already exists" });
       }
 
       // Only allow admin creation by existing admin users
@@ -158,6 +164,7 @@ export function setupAuth(app: Express) {
       
       const user = await storage.createUser({
         username,
+        email,
         password: hashedPassword,
         name,
         role,

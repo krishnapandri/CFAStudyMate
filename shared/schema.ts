@@ -6,10 +6,13 @@ import { z } from "zod";
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
+  email: text("email").notNull().unique(),
   password: text("password").notNull(),
   name: text("name").notNull(),
   role: text("role").notNull().default("student"),
   lastLogin: timestamp("last_login"),
+  resetToken: text("reset_token"),
+  resetTokenExpiry: timestamp("reset_token_expiry"),
 });
 
 // Chapters table
@@ -88,6 +91,7 @@ export const activityLog = pgTable("activity_log", {
 // Define insert schemas using Zod
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
+  email: true,
   password: true,
   name: true,
   role: true,

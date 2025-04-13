@@ -11,6 +11,7 @@ import {
 import session from "express-session";
 import { db, pool } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
+import crypto from 'crypto';
 import connectPg from "connect-pg-simple";
 
 const PostgresSessionStore = connectPg(session);
@@ -19,9 +20,12 @@ export interface IStorage {
   // User methods
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   getAllUsers(): Promise<User[]>;
   updateUserLastLogin(id: number): Promise<void>;
+  requestPasswordReset(email: string): Promise<boolean>;
+  resetPassword(token: string, newPassword: string): Promise<boolean>;
   
   // Chapter methods
   createChapter(chapter: InsertChapter): Promise<Chapter>;
@@ -106,10 +110,65 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db.select().from(users).where(eq(users.username, username));
     return user;
   }
+  
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
+  }
+  
+  async requestPasswordReset(email: string): Promise<boolean> {
+    const user = await this.getUserByEmail(email);
+    
+    if (!user) {
+      return false;
+    }
+    
+    // Generate a random token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    // Token valid for 1 hour
+    const resetTokenExpiry = new Date(Date.now() + 3600000);
+    
+    // Update the user with the reset token
+    await db.update(users)
+      .set({ 
+        resetToken,
+        resetTokenExpiry
+      })
+      .where(eq(users.id, user.id));
+    
+    return true;
+  }
+  
+  async resetPassword(token: string, newPassword: string): Promise<boolean> {
+    // Find user with the given token and not expired
+    const [user] = await db.select()
+      .from(users)
+      .where(
+        and(
+          eq(users.resetToken, token),
+          sql`${users.resetTokenExpiry} > NOW()`
+        )
+      );
+    
+    if (!user) {
+      return false;
+    }
+    
+    // Update password and clear token
+    await db.update(users)
+      .set({ 
+        password: newPassword,
+        resetToken: null,
+        resetTokenExpiry: null
+      })
+      .where(eq(users.id, user.id));
+    
+    return true;
   }
 
   async getAllUsers(): Promise<User[]> {
