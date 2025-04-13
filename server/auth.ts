@@ -127,7 +127,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err, user, info) => {
+    passport.authenticate("local", (err: any, user: Express.User, info: any) => {
       if (err) return next(err);
       if (!user) return res.status(401).json({ message: "Invalid username or password" });
       
@@ -157,7 +157,7 @@ export function setupAuth(app: Express) {
   });
 
   // Middleware to check if user is authenticated
-  const isAuthenticated = (req, res, next) => {
+  const isAuthenticated = (req: { isAuthenticated: () => any; }, res: { status: (arg0: number) => { (): any; new(): any; json: { (arg0: { message: string; }): void; new(): any; }; }; }, next: () => any) => {
     if (req.isAuthenticated()) {
       return next();
     }
@@ -165,7 +165,7 @@ export function setupAuth(app: Express) {
   };
 
   // Middleware to check if user is admin
-  const isAdmin = (req, res, next) => {
+  const isAdmin = (req: { isAuthenticated: () => any; user: { role: string; }; }, res: { status: (arg0: number) => { (): any; new(): any; json: { (arg0: { message: string; }): void; new(): any; }; }; }, next: () => any) => {
     if (req.isAuthenticated() && req.user.role === 'admin') {
       return next();
     }

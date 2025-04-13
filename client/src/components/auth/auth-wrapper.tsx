@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Route, Router, Switch } from 'wouter';
+import { Redirect, Route, Router, Switch } from 'wouter';
 import { Loader2 } from 'lucide-react';
 import AuthPage from '@/pages/auth-page';
 import AdminDashboard from "@/pages/admin-dashboard";
@@ -131,9 +131,8 @@ export function AuthWrapper() {
         {/* Auth route */}
         <Route path="/auth">
           {() => (
-            user 
-              ? <Router>{() => <Route path="*">{() => window.location.href = '/'}</Route>}</Router>
-              : <AuthPage onLogin={handleLogin} onRegister={handleRegister} error={error} />
+            user ? <Router><Route path="*"> <Redirect to="/" /></Route></Router>: 
+                   <AuthPage onLogin={handleLogin} onRegister={handleRegister} error={error} />
           )}
         </Route>
         
